@@ -1,0 +1,40 @@
+---
+- name: Inspect selected PAM service files
+  ansible.builtin.stat:
+    path: "/etc/pam.d/{{ item }}"
+  loop: "{{ yubikey_pam_services }}"
+  register: yubikey_pam_service_files
+
+- name: Refuse missing or symlinked PAM service files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+    fail_msg: >-
+      {{ item.item }} must be an existing regular PAM service file.
+      Do not edit authselect-generated files through this role.
+  loop: "{{ yubikey_pam_service_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Read selected PAM service stacks
+  ansible.builtin.slurp:
+    src: "/etc/pam.d/{{ item }}"
+  loop: "{{ yubikey_pam_services }}"
+  register: yubikey_pam_stacks
+
+- name: Require an unambiguous Fedora password authentication anchor
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.content | b64decode |
+        regex_findall('^auth[ \t]+(?:include|substack)[ \t]+system-auth[ \t]*(?:#.*)?$', multiline=True) |
+        length == 1
+    fail_msg: >-
+      {{ item.item }} does not have exactly one supported system-auth line.
+      Review its PAM configuration manually; no service files have been changed.
+  loop: "{{ yubikey_pam_stacks.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: yubikey_pam_state == 'configured'

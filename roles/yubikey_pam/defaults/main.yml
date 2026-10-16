@@ -1,0 +1,14 @@
+---
+# The full workstation build must not change authentication without opting in.
+yubikey_pam_enabled: false
+
+# setup installs tools only; configured activates PAM; absent removes our rules.
+yubikey_pam_state: setup
+yubikey_pam_user: "{{ ansible_facts['user_id'] }}"
+yubikey_pam_registration_file: "{{ ansible_facts['user_dir'] }}/.config/Yubico/u2f_keys"
+yubikey_pam_origin: pam://yubikey-pam
+yubikey_pam_services:
+  - sudo
+  - lightdm
+  - cinnamon-screensaver
+  - login

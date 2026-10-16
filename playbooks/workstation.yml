@@ -26,6 +26,8 @@
 
     # ── Remote access ──
     - sshd
+    - role: yubikey_pam
+      when: yubikey_pam_enabled | default(false) | bool
 
     # ── Language toolchains ──
     - golang

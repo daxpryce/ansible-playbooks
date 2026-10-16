@@ -65,6 +65,7 @@ Roles are `snake_case` to satisfy `ansible-lint`'s `role-name` rule.
 | `vim` | Installs Vim (`vim-enhanced`) |
 | `vscode` | Installs Visual Studio Code from Microsoft's dnf repository |
 | `wezterm` | Installs [WezTerm](https://wezterm.org) and its Lua configuration |
+| `yubikey_pam` | Opt-in YubiKey FIDO2 PIN + touch for sudo, LightDM, screen unlock, and console login, with password fallback |
 | `zen_browser` | Installs [Zen Browser](https://zen-browser.app) to `/opt/zen` |
 | `zen_browser_extensions` | Downloads extension XPIs into the Zen install |
 | `zen_browser_policies` | Renders Zen's `policies.json` enterprise policy |
@@ -143,6 +144,16 @@ Results go to the journal:
 ```bash
 journalctl -u dnf5-automatic.service
 systemctl list-timers dnf5-automatic.timer
+```
+
+## YubiKey PIN + Touch Authentication
+
+See [YUBIKEY_README.md](YUBIKEY_README.md) for the opt-in setup, enrollment,
+activation, testing, troubleshooting, and recovery commands. To read the guide
+in your terminal:
+
+```bash
+cat YUBIKEY_README.md
 ```
 
 ## Linting

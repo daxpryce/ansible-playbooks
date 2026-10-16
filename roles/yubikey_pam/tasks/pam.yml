@@ -1,0 +1,47 @@
+---
+# Edit only application stacks, not authselect's shared generated files. A failed
+# FIDO attempt falls through to the original password stack, without nouserok.
+- name: Order sudo changes after other services during activation
+  ansible.builtin.set_fact:
+    yubikey_pam_update_order: >-
+      {{ (yubikey_pam_services | reject('equalto', 'sudo') | list)
+         + (['sudo'] if 'sudo' in yubikey_pam_services else []) }}
+
+- name: Update PAM service rules with rollback on write failure
+  block:
+    - name: Manage PIN and touch authentication before the password stack
+      become: true
+      ansible.builtin.blockinfile:
+        path: "/etc/pam.d/{{ item }}"
+        marker: "# {mark} ANSIBLE MANAGED YUBIKEY PAM"
+        insertbefore: '^auth[ \t]+(?:include|substack)[ \t]+system-auth[ \t]*(?:#.*)?$'
+        block: >-
+          auth sufficient pam_u2f.so authfile=/etc/security/yubikey-pam/u2f_keys
+          origin={{ yubikey_pam_origin }} appid={{ yubikey_pam_origin }}
+          cue pinverification=1 userverification=0 userpresence=1
+        state: "{{ 'present' if yubikey_pam_state == 'configured' else 'absent' }}"
+        backup: true
+      # Every loop iteration reauthenticates. Change sudo last when enabling,
+      # and first when disabling, so it cannot break subsequent PAM updates.
+      loop: >-
+        {{ yubikey_pam_update_order if yubikey_pam_state == 'configured'
+           else yubikey_pam_update_order | reverse | list }}
+      register: yubikey_pam_updates
+  rescue:
+    - name: Restore any PAM files changed during the failed update
+      become: true
+      ansible.builtin.copy:
+        src: "{{ item.backup_file }}"
+        dest: "/etc/pam.d/{{ item.item }}"
+        remote_src: true
+        mode: preserve
+      loop: "{{ yubikey_pam_updates.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.backup_file is defined
+
+    - name: Report the failed PAM update
+      ansible.builtin.fail:
+        msg: >-
+          PAM could not be updated. Changed service files were restored from
+          backup. Review the preceding failure before retrying.

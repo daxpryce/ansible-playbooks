@@ -1,0 +1,6 @@
+---
+- name: Configure YubiKey PIN and touch authentication
+  hosts: workstations
+  gather_facts: true
+  roles:
+    - yubikey_pam

@@ -1,0 +1,45 @@
+---
+- name: Validate YubiKey PAM options
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Fedora'
+      - ansible_facts['architecture'] == 'x86_64'
+      - yubikey_pam_state in ['setup', 'configured', 'absent']
+      - yubikey_pam_services | length > 0
+      - yubikey_pam_services | difference(['sudo', 'lightdm', 'cinnamon-screensaver', 'login']) | length == 0
+      - yubikey_pam_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+      - yubikey_pam_user != 'root'
+      - yubikey_pam_origin is match('^pam://[a-zA-Z0-9._-]+$')
+    fail_msg: Use a non-root Fedora workstation account and supported PAM services.
+
+- name: Install YubiKey authentication and enrollment tools
+  become: true
+  ansible.builtin.dnf:
+    name:
+      - pam-u2f
+      - pamu2fcfg
+      - yubikey-manager
+      - policycoreutils-python-utils
+    state: present
+  when: yubikey_pam_state != 'absent'
+
+- name: Explain the enrollment step
+  ansible.builtin.debug:
+    msg: >-
+      This run does not change PAM. Set or confirm the FIDO2 PIN
+      using ykman, then enroll with pamu2fcfg -N -o {{ yubikey_pam_origin }}
+      -i {{ yubikey_pam_origin }} as {{ yubikey_pam_user }}. See YUBIKEY_README.md for
+      safe registration commands, backup keys and activation instructions.
+  when: yubikey_pam_state == 'setup'
+
+- name: Check the selected PAM services before changing authentication
+  ansible.builtin.include_tasks: preflight.yml
+  when: yubikey_pam_state != 'setup'
+
+- name: Deploy enrolled credentials
+  ansible.builtin.include_tasks: credentials.yml
+  when: yubikey_pam_state == 'configured'
+
+- name: Apply or remove service-specific authentication
+  ansible.builtin.include_tasks: pam.yml
+  when: yubikey_pam_state != 'setup'
