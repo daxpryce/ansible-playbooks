@@ -24,7 +24,14 @@
     baseurl: "{{ task_repo_baseurl }}"
     gpgkey: "{{ task_repo_gpgkey }}"
     gpgcheck: true
-    repo_gpgcheck: true
+    # dnf5 keeps repomd.xml signature verification keys in its own keybox,
+    # separate from the rpm keyring that rpm_key (above) populates and that
+    # package-level gpgcheck uses. Nothing here can answer dnf5's interactive
+    # "Importing OpenPGP key ... Is this ok" prompt for that keybox, so
+    # repo_gpgcheck fails every run and skip_if_unavailable silently drops
+    # this repo, falling back to Fedora's own "task" (Taskwarrior) package of
+    # the same name. Packages are still verified via gpgcheck.
+    repo_gpgcheck: false
     # A third-party repo should not be able to block a system-wide upgrade.
     skip_if_unavailable: true
     # Cloudsmith's script set 300s, which re-fetches metadata on almost every
