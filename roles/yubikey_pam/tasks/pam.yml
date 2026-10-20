@@ -15,12 +15,18 @@
         path: "/etc/pam.d/{{ item }}"
         marker: "# {mark} ANSIBLE MANAGED YUBIKEY PAM"
         insertbefore: '^auth[ \t]+(?:include|substack)[ \t]+system-auth[ \t]*(?:#.*)?$'
-        block: >-
+        block: |
+          {% if item == 'sudo' %}
+          auth [success=1 default=ignore] pam_exec.so quiet quiet_log type=auth /usr/local/bin/yubikey-pam-is-ssh
+          {% endif %}
+          {{ yubikey_pam_fido_rule }}
+        state: "{{ 'present' if yubikey_pam_state == 'configured' else 'absent' }}"
+        backup: true
+      vars:
+        yubikey_pam_fido_rule: >-
           auth sufficient pam_u2f.so authfile=/etc/security/yubikey-pam/u2f_keys
           origin={{ yubikey_pam_origin }} appid={{ yubikey_pam_origin }}
           cue pinverification=1 userverification=0 userpresence=1
-        state: "{{ 'present' if yubikey_pam_state == 'configured' else 'absent' }}"
-        backup: true
       # Every loop iteration reauthenticates. Change sudo last when enabling,
       # and first when disabling, so it cannot break subsequent PAM updates.
       loop: >-

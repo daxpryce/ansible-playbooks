@@ -7,3 +7,6 @@
 
 # Ansible retry files.
 *.retry
+
+# Python test bytecode.
+__pycache__/

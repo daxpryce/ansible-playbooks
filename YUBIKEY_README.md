@@ -13,6 +13,10 @@ Authentication accepts **either the key's FIDO2 PIN plus touch, or your existing
 Linux password**. This does not require a Yubico cloud service. The PIN stays
 on the key and is entered interactively, never in Ansible variables or files.
 The FIDO2 PIN is shared with other FIDO2 uses of that same key.
+For `sudo` inside a positively identified SSH session, the key is skipped and
+the existing Linux-password stack is used directly, even if the key stays
+plugged into the workstation. Local sudo, login, and unlock keep PIN + touch
+with password fallback. SSH login authentication itself is unchanged.
 
 ## 1. Install the tools
 
@@ -125,7 +129,7 @@ share that authentication timestamp. That approach failed on this workstation.
 
 The role requires an enrolled FIDO2 credential before changing PAM. It manages
 only `sudo`, `lightdm`, `cinnamon-screensaver`, and `login` service files, inserts
-its rule immediately before their existing `system-auth` authentication line,
+its rules immediately before their existing `system-auth` authentication line,
 and leaves that password stack intact. `sudo -i` inherits the `sudo` stack.
 Other accounts without a mapping continue to use passwords.
 To restrict the services, pass a YAML variables file containing, for example:
@@ -175,7 +179,7 @@ Test screen lock/unlock and a separate text console (Ctrl+Alt+F3; the graphical
 session is typically on Ctrl+Alt+F1 or F2) with both methods before logging out.
 Finally test the LightDM login screen. Do not reboot as the first test.
 
-This does not change sudo's authentication cache, SSH, automatic login,
+This does not change sudo's authentication cache, SSH login, automatic login,
 LUKS disk unlock, or desktop keyring encryption. Without your Linux password,
 the login keyring may remain locked and ask for its password separately.
 LightDM greeter wording can vary, so distinguish the FIDO2 PIN prompt from
@@ -196,16 +200,52 @@ user-writability is not. There is also an
 [upstream compatibility report](https://github.com/linuxmint/cinnamon-screensaver/issues/516);
 it does not mean PIN + touch is universally unsupported on Cinnamon.
 
+### Sudo over SSH
+
+Rerun activation from step 4 to update an existing installation; no reenrollment
+is needed. The connected-key, single interactive sudo command works for this
+update too. Afterward, open a fresh SSH connection to the workstation and run:
+
+```bash
+loginctl show-session self -p Remote -p Service
+sudo -k
+sudo -v
+```
+
+The session should report `Remote=yes` and `Service=sshd`. Sudo should ask for
+your **Linux password**, without requesting the key's PIN or touch. Repeat the
+sudo commands in a local desktop terminal: that should still request PIN +
+touch. Do not enter deliberately wrong PINs to force password fallback.
+
+The root-owned `/usr/local/bin/yubikey-pam-is-ssh` helper queries logind for its
+own process's session, with a clean subprocess environment and a five-second
+timeout. It does not trust `SSH_CONNECTION`, `SSH_TTY`, or `XDG_SESSION_ID`.
+Only `Remote=yes` together with `Service=sshd` skips the single following
+`pam_u2f` rule; the original password stack is never skipped by this guard.
+Missing sessions, logind failures, or unexpected metadata retain the normal
+YubiKey-first behavior and log a warning:
+
+```bash
+journalctl -t yubikey-pam-is-ssh --since "10 minutes ago"
+```
+
+This follows the process's logind session, not whichever client is currently
+attached to it. A tmux or screen server started locally can still look local
+when attached over SSH; a server started over SSH can retain its remote
+classification when attached locally. Use a fresh SSH shell outside an
+existing multiplexer when checking this behavior.
+
 ## Disable the integration
 
 ```bash
 ansible-playbook playbooks/yubikey_pam.yml -K -e yubikey_pam_state=absent
 ```
 
-This removes only this role's marked PAM blocks and leaves packages and
-credentials in place. Merely running `setup` again does not disable existing
-rules. Use the same service list you used to activate. From the recovery root
-shell, you can also remove the three-line block between
+This removes this role's marked PAM blocks and, when `sudo` is selected, its
+SSH session helper. Packages and credentials remain in place.
+Merely running `setup` again does not disable existing rules. Use the same
+service list you used to activate. From the recovery root shell, you can also
+remove the entire marked block, including both markers, between
 `# BEGIN ANSIBLE MANAGED YUBIKEY PAM` and
 `# END ANSIBLE MANAGED YUBIKEY PAM` from each affected `/etc/pam.d/` file.
 Do not remove the original `system-auth` lines.

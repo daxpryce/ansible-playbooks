@@ -1,0 +1,59 @@
+#!/usr/bin/python3 -I
+"""Return success only for a positively identified logind SSH session."""
+
+import subprocess
+import sys
+import syslog
+
+
+def keep_yubikey(reason):
+    syslog.syslog(
+        syslog.LOG_WARNING,
+        f"{reason}; retaining YubiKey authentication",
+    )
+    return False
+
+
+def is_ssh_session():
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/loginctl",
+                "--no-pager",
+                "show-session",
+                "self",
+                "--property=Remote",
+                "--property=Service",
+            ],
+            # PAM's environment is partly user-controlled. In particular, do
+            # not inherit bus addresses or systemd session overrides.
+            env={"PATH": "/usr/bin:/usr/sbin", "LANG": "C"},
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return keep_yubikey(f"Cannot query the current logind session: {error}")
+
+    if result.returncode != 0:
+        return keep_yubikey(
+            f"loginctl exited with status {result.returncode}: {result.stderr.strip()}"
+        )
+
+    properties = {}
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or key not in {"Remote", "Service"} or key in properties:
+            return keep_yubikey("Unexpected logind session properties")
+        properties[key] = value
+
+    if properties.get("Remote") not in {"yes", "no"} or not properties.get("Service"):
+        return keep_yubikey("Missing or invalid logind session properties")
+
+    return properties["Remote"] == "yes" and properties["Service"] == "sshd"
+
+
+if __name__ == "__main__":
+    syslog.openlog("yubikey-pam-is-ssh", syslog.LOG_PID, syslog.LOG_AUTHPRIV)
+    sys.exit(0 if is_ssh_session() else 1)

@@ -20,6 +20,8 @@
       - pamu2fcfg
       - yubikey-manager
       - policycoreutils-python-utils
+      - python3
+      - systemd
     state: present
   when: yubikey_pam_state != 'absent'
 
@@ -40,6 +42,27 @@
   ansible.builtin.include_tasks: credentials.yml
   when: yubikey_pam_state == 'configured'
 
+- name: Install the sudo SSH session detector before enabling its PAM rule
+  become: true
+  ansible.builtin.copy:
+    src: yubikey-pam-is-ssh
+    dest: /usr/local/bin/yubikey-pam-is-ssh
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - yubikey_pam_state == 'configured'
+    - "'sudo' in yubikey_pam_services"
+
 - name: Apply or remove service-specific authentication
   ansible.builtin.include_tasks: pam.yml
   when: yubikey_pam_state != 'setup'
+
+- name: Remove the sudo SSH session detector after removing its PAM rule
+  become: true
+  ansible.builtin.file:
+    path: /usr/local/bin/yubikey-pam-is-ssh
+    state: absent
+  when:
+    - yubikey_pam_state == 'absent'
+    - "'sudo' in yubikey_pam_services"
